@@ -5,8 +5,8 @@ import requests
 from tabulate import tabulate
 
 # Configura tu API Key y API Secret aquí
-api_key = 'gLq96rEqMIjoi7INAwvCqZ3pk0cZ9PUAeVH5Dgjkw6tDsk8d9QIHsgItzyPCA3tX'
-api_secret = '9I8fkZcupmRkS10sNL2z1r99Cuvz3AVnKDctmX4loJ3NYXBYSyCowsX3qQ3dIX1i'
+api_key = ''
+api_secret = ''
 
 def generate_signature(data):
     return hmac.new(api_secret.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).hexdigest()
