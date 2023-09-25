@@ -5,64 +5,53 @@ import requests
 from tabulate import tabulate
 
 # Configura tu API Key y API Secret aquí
-api_key = ''
-api_secret = ''
+api_key = 'gLq96rEqMIjoi7INAwvCqZ3pk0cZ9PUAeVH5Dgjkw6tDsk8d9QIHsgItzyPCA3tX'
+api_secret = '9I8fkZcupmRkS10sNL2z1r99Cuvz3AVnKDctmX4loJ3NYXBYSyCowsX3qQ3dIX1i'
 
 def generate_signature(data):
     return hmac.new(api_secret.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).hexdigest()
 
+def get_data_from_binance(endpoint):
+    base_url = 'https://fapi.binance.com'
+    url = f'{base_url}{endpoint}'
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error en la solicitud HTTP: {e}")
+        return None
+
 def get_tokens_in_min_max(days):
     while True:
-        # URL base y endpoints para los datos de Binance
-        base_url = 'https://fapi.binance.com'
         endpoint_tickers = '/fapi/v1/ticker/24hr'
         endpoint_funding = '/fapi/v1/fundingRate'
 
-        try:
-            # Realizar solicitudes HTTP para datos de tickers y tasas de financiamiento
-            response_tickers = requests.get(base_url + endpoint_tickers)
-            response_funding = requests.get(base_url + endpoint_funding)
-            response_tickers.raise_for_status()
-            response_funding.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"Error en la solicitud HTTP: {e}")
+        data_tickers = get_data_from_binance(endpoint_tickers)
+        data_funding = get_data_from_binance(endpoint_funding)
+
+        if data_tickers is None or data_funding is None:
             continue
 
-        # Convertir los datos en formato JSON
-        data_tickers = response_tickers.json()
-        data_funding = response_funding.json()
-
-        # Obtener la marca de tiempo actual y el límite de tiempo
         current_timestamp = int(time.time() * 1000)
         time_limit = current_timestamp - (days * 24 * 60 * 60 * 1000)
 
-        # Crear un diccionario de tasas de financiamiento por símbolo
         funding_rates = {item['symbol']: f"{float(item['fundingRate']) * 100:.2f}%" for item in data_funding}
-
-        # Lista para almacenar datos de tokens con mínimos y máximos históricos
         token_data_min = []
         token_data_max = []
+        volumen_minimo = 100000  # Ajusta este valor según tus necesidades
 
-        # Definir un umbral de volumen mínimo (ajusta este valor según tus necesidades)
-        volumen_minimo = 100000  # Por ejemplo, 100,000 BTC
-
-        # Iterar a través de los datos de tickers
         for item in data_tickers:
-            # Verificar si los datos necesarios están presentes en el ticker
             if all(key in item for key in ('lowPrice', 'lastPrice', 'closeTime', 'priceChangePercent', 'volume')):
-                # Obtener valores clave
                 low_price = float(item['lowPrice'])
                 last_price = float(item['lastPrice'])
-                price_change_percent = float(item['priceChangePercent'].rstrip('%'))  # Eliminar el símbolo "%"
+                price_change_percent = float(item['priceChangePercent'].rstrip('%'))
                 timestamp = int(item['closeTime'])
                 volume = float(item['volume'])
-
-                # Calcular la cantidad comprada y vendida
                 quantity_bought = 0
                 quantity_sold = 0
 
-                # Verificar si el precio bajo es menor que el precio actual, el cambio de precio es negativo,
-                # y el volumen operado supera el umbral mínimo
                 if low_price < last_price and price_change_percent < 0 and timestamp > time_limit and volume > volumen_minimo:
                     quantity_bought = last_price
                     token_data_min.append([
@@ -75,8 +64,6 @@ def get_tokens_in_min_max(days):
                         funding_rates.get(item['symbol'], "N/A")
                     ])
 
-                # Verificar si el precio alto es mayor que el precio actual, el cambio de precio es positivo,
-                # y el volumen operado supera el umbral mínimo
                 if float(item['highPrice']) > last_price and price_change_percent > 0 and timestamp > time_limit and volume > volumen_minimo:
                     quantity_sold = last_price
                     token_data_max.append([
@@ -89,64 +76,48 @@ def get_tokens_in_min_max(days):
                         funding_rates.get(item['symbol'], "N/A")
                     ])
 
-        # Ordenar los datos por cambio de precio (tanto mínimos como máximos)
         token_data_min.sort(key=lambda x: float(x[1].rstrip('%')))
         token_data_max.sort(key=lambda x: float(x[1].rstrip('%')), reverse=True)
 
-        # Encabezados de la tabla
         headers = ["Símbolo", "Porcentaje de Cambio", "Precio Actual", "Cantidad Comprada", "Cantidad Vendida", "Volumen Operado", "Tasa de Financiamiento"]
-
-        # Establecer formato de tabla para una mejor presentación
         tablefmt = "pretty"
 
-        # Limpiar la pantalla antes de imprimir
         print("\033c")
-
-        # Mostrar la tabla de tokens con mínimos históricos
         print("Tokens con Mínimos Históricos:")
         print(tabulate(token_data_min[:10], headers, tablefmt=tablefmt))
         print("\n")
-
-        # Mostrar la tabla de tokens con máximos históricos
         print("Tokens con Máximos Históricos:")
-        print(tabulate(token_data_max[:50], headers, tablefmt=tablefmt))
-
-        # Esperar 0.01 segundos antes de la próxima actualización
-        time.sleep(0.01)
+        print(tabulate(token_data_max[:70], headers, tablefmt=tablefmt))
+        time.sleep(5)
 
 def get_order_book(symbol, limit):
     while True:
-        # URL base y endpoint para el libro de órdenes
-        base_url = 'https://fapi.binance.com'
         endpoint_order_book = f'/fapi/v1/depth?symbol={symbol}&limit={limit}'
+        order_book_data = get_data_from_binance(endpoint_order_book)
 
-        try:
-            # Realizar solicitud HTTP para el libro de órdenes
-            response_order_book = requests.get(base_url + endpoint_order_book)
-            response_order_book.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"Error en la solicitud HTTP: {e}")
+        if order_book_data is None:
             continue
 
-        # Obtener datos del libro de órdenes en formato JSON
-        order_book_data = response_order_book.json()
-
-        # Mostrar el libro de órdenes
         bids = order_book_data.get('bids', [])
         asks = order_book_data.get('asks', [])
+        tablefmt = "pretty"
 
-        tablefmt = "pretty"  # Establecer formato de tabla
+        # Ordena las listas de bids y asks en función del tamaño de las órdenes
+        bids.sort(key=lambda x: float(x[1]), reverse=True)
+        asks.sort(key=lambda x: float(x[1]), reverse=True)
 
-        # Limpiar la pantalla antes de imprimir
         print("\033c")
-
         print(f"Libro de Órdenes para el par {symbol} (Limit: {limit}):\n")
+
+        # Muestra las órdenes de compra (bids)
+        print("Órdenes de Compra (BID):")
         print(tabulate(bids, headers=["Precio (BID)", "Cantidad (BID)"], tablefmt=tablefmt))
         print("\n")
-        print(tabulate(asks, headers=["Precio (ASK)", "Cantidad (ASK)"], tablefmt=tablefmt))
 
-        # Esperar 1 segundo antes de la próxima actualización
-        time.sleep(15)
+        # Muestra las órdenes de venta (asks)
+        print("Órdenes de Venta (ASK):")
+        print(tabulate(asks, headers=["Precio (ASK)", "Cantidad (ASK)"], tablefmt=tablefmt))
+        time.sleep(5)
 
 def main():
     while True:
